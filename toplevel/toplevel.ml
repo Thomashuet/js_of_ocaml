@@ -52,38 +52,19 @@ let g = global_data ()
 let _ =
   let toc = g##toc in
   let prims = split_primitives (List.assoc "PRIM" toc) in
-
   let compile s =
     let output_program = Driver.from_string prims s in
     let b = Buffer.create 100 in
     output_program (Pretty_print.to_buffer b);
     Buffer.contents b
   in
-  g##compile <- compile; (*XXX HACK!*)
+  g##compile <- compile (*XXX HACK!*)
 
-module Html = Dom_html
-
-let s =
-  "let x = 10+10;;\n\
-   let y = x * 3;;\n\
-   String.make x 'a';;\n\
-   sin 1.;;\n\
-   let rec fact n = if n = 0 then 1. else float n *. fact (n - 1);;\n\
-   fact 20;;\n\
-   \"abc\" < \"def\";;\n"
-
-let doc = Dom_html.document
-let button_type = Js.string "button"
-let button txt action =
-  let b = Dom_html.createInput ~_type:button_type doc in
-  b##value <- Js.string txt;
-  b##onclick <- Dom_html.handler (fun _ -> action (); Js._true);
-  b
-
-let start ppf =
-  Format.fprintf ppf "        Objective Caml version %s@.@." Sys.ocaml_version;
+let start ppf = begin
+  Format.fprintf ppf "        OCaml version %s@.@." Sys.ocaml_version;
   Toploop.initialize_toplevel_env ();
   Toploop.input_name := ""
+end
 
 let at_bol = ref true
 let consume_nl = ref false
@@ -137,42 +118,39 @@ let loop s ppf =
     ()
   end
 
-let run _ =
-  let top =
-    Js.Opt.get (doc##getElementById(Js.string "toplevel"))
-      (fun () -> assert false) in
-  let output = Html.createDiv doc in
-  output##id <- Js.string "output";
-  output##style##whiteSpace <- Js.string "pre";
-  Dom.appendChild top output;
+let postMessage = Js.Unsafe.variable "postMessage"
 
+let js_object = Js.Unsafe.variable "Object"
+
+let update_prompt prompt =
+  let response = jsnew js_object () in
+  ignore begin
+    Js.Unsafe.set response (Js.string "ready") (Js.string prompt);
+    Js.Unsafe.call postMessage (Js.Unsafe.variable "self") [|Js.Unsafe.inject response|]
+  end
+
+let post_output s =
+  let response = jsnew js_object () in
+  ignore begin
+    Js.Unsafe.set response (Js.string "out") (Js.string s);
+    Js.Unsafe.call postMessage (Js.Unsafe.variable "self") [|Js.Unsafe.inject response|]
+  end
+
+let run () =
   let ppf =
     let b = Buffer.create 80 in
     Format.make_formatter
       (fun s i l -> Buffer.add_substring b s i l)
       (fun _ ->
-         Dom.appendChild output
-           (doc##createTextNode(Js.string (Buffer.contents b)));
+         post_output (Buffer.contents b);
          Buffer.clear b)
   in
-
-  let textbox = Html.createTextarea doc in
-  textbox##rows <- 10; textbox##cols <- 80;
-  textbox##value <- Js.string s;
-  Dom.appendChild top textbox;
-  Dom.appendChild top (Html.createBr doc);
-
-  textbox##focus(); textbox##select();
-  let b =
-    button "Send"
-      (fun () ->
-         loop (Js.to_string textbox##value) ppf;
-         textbox##focus(); textbox##select();
-         doc##documentElement##scrollTop <- doc##body##scrollHeight)
+  let onmessage event =
+    let s = Js.to_string event##data##input in
+    loop s ppf
   in
-  Dom.appendChild top b;
-  start ppf;
+  let _ = Js.Unsafe.set (Js.Unsafe.variable "self") (Js.string "onmessage") onmessage in
+  start ppf
 
-  Js._false
 
-let _ = Html.window##onload <- Html.handler run
+let _ = run ()
