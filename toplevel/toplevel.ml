@@ -147,10 +147,12 @@ let run () =
   in
   let onmessage event =
     let s = Js.to_string event##data##input in
-    loop s ppf
+    let _ = loop s ppf in
+    update_prompt "# "
   in
   let _ = Js.Unsafe.set (Js.Unsafe.variable "self") (Js.string "onmessage") onmessage in
-  start ppf
+  let _ = start ppf in
+  update_prompt "# "
 
 
 let _ = run ()
