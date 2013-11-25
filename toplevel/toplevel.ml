@@ -129,29 +129,31 @@ let update_prompt prompt =
     Js.Unsafe.call postMessage (Js.Unsafe.variable "self") [|Js.Unsafe.inject response|]
   end
 
-let post_output s =
+let post_output id s =
   let response = jsnew js_object () in
   ignore begin
-    Js.Unsafe.set response (Js.string "out") (Js.string s);
+    Js.Unsafe.set response (Js.string "res") (Js.string s);
+    Js.Unsafe.set response (Js.string "id") (Js.string id);
     Js.Unsafe.call postMessage (Js.Unsafe.variable "self") [|Js.Unsafe.inject response|]
   end
 
 let run () =
-  let ppf =
+  let ppf id =
     let b = Buffer.create 80 in
     Format.make_formatter
       (fun s i l -> Buffer.add_substring b s i l)
       (fun _ ->
-         post_output (Buffer.contents b);
+         post_output id (Buffer.contents b);
          Buffer.clear b)
   in
   let onmessage event =
-    let s = Js.to_string event##data##input in
-    let _ = loop s ppf in
+    let s = Js.to_string event##data##req in
+    let id = Js.to_string event##data##id in
+    let _ = loop s (ppf id) in
     update_prompt "# "
   in
   let _ = Js.Unsafe.set (Js.Unsafe.variable "self") (Js.string "onmessage") onmessage in
-  let _ = start ppf in
+  let _ = start (ppf "0") in
   update_prompt "# "
 
 
